@@ -16,6 +16,7 @@ const el = {
 
 let movie = { startImageUrl: null, shots: [] };
 let playIndex = -1;          // index into readyShots()
+let playingId = null;        // id of the shot on screen, so the index survives edits
 let waitingForNext = false;  // playback ran out of footage mid-movie
 let pollTimer = null;
 const openPrompts = new Set(); // shot ids whose prompt disclosure is expanded
@@ -36,9 +37,10 @@ function playAt(i) {
   const shot = shots[i];
 
   if (playIndex !== i || el.player.src !== shot.videoUrl) {
-    playIndex = i;
     el.player.src = shot.videoUrl;
   }
+  playIndex = i;
+  playingId = shot.id;
   waitingForNext = false;
   el.screen.classList.add('has-content', 'playing');
   el.player.play().catch(() => {}); // autoplay can be blocked before any gesture
@@ -180,6 +182,7 @@ function renderBeats(ready) {
       ${shot.speaker && shot.line ? `<p class="beat-speaker">${esc(shot.speaker)}</p>` : ''}
       ${shot.line ? `<p class="beat-line">${esc(shot.line)}</p>` : ''}
       ${shot.direction ? `<p class="beat-direction">${esc(shot.direction)}</p>` : ''}
+      ${shot.offChain ? `<p class="beat-offchain">Opens on a different frame than the shot before it — regenerate to restitch.</p>` : ''}
       ${shot.error ? `<p class="beat-error">${esc(shot.error)}</p>` : ''}
       ${shot.prompt ? `
         <details class="beat-prompt">
@@ -207,22 +210,56 @@ function renderBeats(ready) {
     if (shot.status === 'ready') {
       li.addEventListener('click', () => playAt(ready.findIndex((s) => s.id === shot.id)));
     }
-    if (shot.status === 'failed') {
-      const retry = document.createElement('button');
-      retry.className = 'retry';
-      retry.textContent = 'Retry shot';
-      retry.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await api(`/api/shots/${shot.id}/retry`, { method: 'POST' });
-        refresh();
-      });
-      li.appendChild(retry);
-    }
+    const actions = document.createElement('div');
+    actions.className = 'beat-actions';
+    actions.addEventListener('click', (e) => e.stopPropagation()); // don't seek
+
+    const regen = document.createElement('button');
+    regen.className = 'beat-act';
+    regen.textContent = shot.status === 'failed' ? 'Retry' : 'Regenerate';
+    regen.disabled = shot.status === 'queued' || shot.status === 'rendering';
+    regen.title = 'Render this shot again from the frame the previous shot ends on';
+    regen.addEventListener('click', () =>
+      shotAction(`/api/shots/${shot.id}/regenerate`, 'POST'));
+
+    // Deliberately allowed mid-render: it is the only way out of a stuck shot.
+    const del = document.createElement('button');
+    del.className = 'beat-act danger';
+    del.textContent = 'Delete';
+    del.addEventListener('click', () => {
+      if (!confirm(`Delete shot ${shot.index}? Its clip is not recoverable.`)) return;
+      openPrompts.delete(shot.id);
+      shotAction(`/api/shots/${shot.id}`, 'DELETE');
+    });
+
+    actions.append(regen, del);
+    li.appendChild(actions);
     el.beats.appendChild(li);
   }
 }
 
+function stopPlayback() {
+  playIndex = -1;
+  playingId = null;
+  waitingForNext = false;
+  el.player.removeAttribute('src');
+  el.player.load();
+  el.screen.classList.remove('playing');
+  el.nowPlaying.hidden = true;
+}
+
 /* ── Server sync ──────────────────────────────────────────── */
+
+/** Delete and regenerate both answer with the whole movie. */
+async function shotAction(url, method) {
+  el.composerError.hidden = true;
+  try {
+    applyState(await api(url, { method }));
+  } catch (err) {
+    el.composerError.hidden = false;
+    el.composerError.textContent = err.message;
+  }
+}
 
 async function api(url, opts = {}) {
   const res = await fetch(url, {
@@ -238,6 +275,18 @@ function applyState(next) {
   const previouslyReady = new Set(readyShots().map((s) => s.id));
   movie = next;
   const ready = readyShots();
+
+  // Shots can be deleted or sent back to render underneath us, so the position
+  // has to be re-derived from the playing shot's identity - a bare index would
+  // silently start pointing at a different clip.
+  if (playingId) {
+    const at = ready.findIndex((s) => s.id === playingId);
+    if (at >= 0) {
+      playIndex = at;
+    } else {
+      stopPlayback(); // the clip on screen is gone; don't sit on a stale src
+    }
+  }
 
   // A fresh shot landed while playback was waiting at the end of the reel.
   if (el.autoplayNew.checked) {
@@ -282,12 +331,7 @@ async function useFile(file) {
       method: 'POST',
       body: JSON.stringify({ dataUrl, fileName: file.name }),
     });
-    playIndex = -1;
-    waitingForNext = false;
-    el.player.removeAttribute('src');
-    el.player.load();
-    el.screen.classList.remove('playing');
-    el.nowPlaying.hidden = true;
+    stopPlayback();
     el.openingNote.textContent = "This picture is the movie's first frame. Every following shot picks up where the previous one ended.";
     applyState(next);
     el.lineInput.focus();
@@ -355,12 +399,8 @@ el.resetBtn.addEventListener('click', async () => {
   const next = await api('/api/reset', { method: 'POST' });
   openPrompts.clear();
   el.speakerInput.value = '';
-  playIndex = -1;
-  waitingForNext = false;
-  el.player.removeAttribute('src');
-  el.player.load();
+  stopPlayback();
   el.screen.className = 'screen';
-  el.nowPlaying.hidden = true;
   el.startThumb.removeAttribute('src');
   el.still.removeAttribute('src');
   applyState(next);

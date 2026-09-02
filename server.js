@@ -55,10 +55,18 @@ const publicShot = (shot) => ({
   createdAt: shot.createdAt,
 });
 
-const state = () => ({
-  startImageUrl: movie.startImageUrl,
-  shots: movie.shots.map(publicShot),
-});
+const state = () => {
+  let expected = movie.startImageUrl;
+  const shots = movie.shots.map((shot) => {
+    // Off-chain: this shot no longer opens on the frame the one before it ends
+    // on. That is what deleting or regenerating an earlier shot leaves behind,
+    // and it is the difference between a continuous take and a jump cut.
+    const offChain = Boolean(expected) && shot.startImageUrl !== expected;
+    if (shot.status !== 'failed') expected = shot.endImageUrl || shot.startImageUrl;
+    return { ...publicShot(shot), offChain };
+  });
+  return { startImageUrl: movie.startImageUrl, shots };
+};
 
 /**
  * Turn the free-text speaker note into the subject of the speech sentence.
@@ -128,6 +136,10 @@ async function renderShot(shot) {
       },
     });
 
+    // The shot can be deleted while fal is still working on it; anything past
+    // this point (including the frame upload) would be work for a ghost.
+    if (!movie.shots.includes(shot)) return;
+
     shot.videoUrl = result.data?.video?.url;
     shot.expandedPrompt = result.data?.expanded_prompt;
     if (!shot.videoUrl) throw new Error('fal returned no video URL');
@@ -142,6 +154,7 @@ async function renderShot(shot) {
       shot.endImageUrl = shot.startImageUrl;
     }
   } catch (err) {
+    if (!movie.shots.includes(shot)) return;
     console.error(`Shot ${shot.index} failed:`, err);
     shot.status = 'failed';
     shot.error = err?.body?.detail
@@ -150,15 +163,22 @@ async function renderShot(shot) {
   }
 }
 
-/** The image the next shot should start from. */
-function currentTailImage() {
-  for (let i = movie.shots.length - 1; i >= 0; i--) {
-    const shot = movie.shots[i];
+/**
+ * The frame the shot at array index `i` should open on: the end of the nearest
+ * preceding shot that actually rendered. Failed shots are transparent - the
+ * chain reaches back through them.
+ */
+function tailImageBefore(i) {
+  for (let j = i - 1; j >= 0; j--) {
+    const shot = movie.shots[j];
     if (shot.status === 'failed') continue;
     return shot.endImageUrl || shot.startImageUrl;
   }
   return movie.startImageUrl;
 }
+
+/** The image the next shot should start from. */
+const currentTailImage = () => tailImageBefore(movie.shots.length);
 
 app.get('/api/state', (_req, res) => res.json(state()));
 
@@ -222,18 +242,42 @@ app.post('/api/shots', (req, res) => {
   res.status(202).json({ shot: publicShot(shot) });
 });
 
-app.post('/api/shots/:id/retry', (req, res) => {
-  const shot = shotById(req.params.id);
-  if (!shot) return res.status(404).json({ error: 'No such shot.' });
+app.post('/api/shots/:id/regenerate', (req, res) => {
+  const i = movie.shots.findIndex((s) => s.id === req.params.id);
+  if (i === -1) return res.status(404).json({ error: 'No such shot.' });
+  const shot = movie.shots[i];
   if (shot.status === 'queued' || shot.status === 'rendering') {
     return res.status(409).json({ error: 'That shot is already rendering.' });
   }
+
+  // Re-derive the opening frame rather than reusing the stored one: if an
+  // earlier shot was deleted or re-rendered, the stored frame is stale and
+  // regenerating is exactly how the chain gets stitched back together.
+  const startImageUrl = tailImageBefore(i);
+  if (!startImageUrl) {
+    return res.status(400).json({ error: 'Upload a starting image first.' });
+  }
+
+  shot.startImageUrl = startImageUrl;
   shot.status = 'queued';
   shot.error = null;
   shot.videoUrl = null;
   shot.endImageUrl = null;
+  shot.expandedPrompt = null;
   renderShot(shot);
-  res.json({ shot: publicShot(shot) });
+  res.json(state());
+});
+
+app.delete('/api/shots/:id', (req, res) => {
+  const i = movie.shots.findIndex((s) => s.id === req.params.id);
+  if (i === -1) return res.status(404).json({ error: 'No such shot.' });
+
+  // Removing a shot renumbers the ones after it, but deliberately leaves their
+  // rendered video alone - they are reported off-chain instead, so the cost of
+  // re-rendering stays the user's call.
+  movie.shots.splice(i, 1);
+  movie.shots.forEach((shot, n) => { shot.index = n + 1; });
+  res.json(state());
 });
 
 app.post('/api/reset', (_req, res) => {

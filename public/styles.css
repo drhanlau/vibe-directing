@@ -396,17 +396,36 @@ button, input, select, textarea { font: inherit; color: inherit; }
   line-height: 1.5;
   word-break: break-word;
 }
-.retry {
-  margin-top: 8px;
+.beat-offchain {
+  margin: 7px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--accent);
+}
+
+.beat-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+}
+.beat-act {
   background: none;
-  border: 1px solid var(--danger);
-  color: var(--danger);
+  border: 1px solid var(--line);
+  color: var(--muted);
   border-radius: 6px;
   padding: 3px 9px;
   font-size: 11px;
   cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
 }
-.retry:hover { background: rgba(226,86,74,.12); }
+.beat-act:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+.beat-act:disabled { opacity: .35; cursor: default; }
+.beat-act.danger:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(226,86,74,.1);
+}
+.beat.failed .beat-act:first-child { color: var(--danger); border-color: var(--danger); }
 
 /* ── Composer ────────────────────────────────────────────── */
 

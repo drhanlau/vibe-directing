@@ -32,7 +32,8 @@ Open http://localhost:5174 (override with `PORT=... npm start`).
 | `POST /api/start-image` | Uploads the opening picture to fal storage, resets the movie. |
 | `POST /api/shots` | Builds the prompt, submits to `minimax/h3-max/image-to-video`, renders in the background. |
 | `GET /api/state` | Full storyline + shot statuses; the browser polls this while anything is rendering. |
-| `POST /api/shots/:id/retry` | Re-runs a failed shot. |
+| `POST /api/shots/:id/regenerate` | Re-renders one shot, from the frame the shot before it now ends on. |
+| `DELETE /api/shots/:id` | Drops one shot and renumbers the rest. |
 | `POST /api/reset` | Clears the movie. |
 
 The prompt sent to the model is assembled from your scene direction, the dialogue
@@ -65,6 +66,26 @@ between shots, since a two-hander alternates between the same two descriptions.
 
 Leave the dialogue box empty and write only scene direction to get an action
 beat — a look, a move, a camera push — with no speech instruction in the prompt.
+
+### Deleting and regenerating
+
+Every beat has **Regenerate** and **Delete**. Regenerate re-renders the shot from
+its prompt — the same prompt, so it is a second take, not an edit. Delete drops
+the shot and renumbers the rest.
+
+Both cut the chain. A shot's opening frame is the previous shot's *last* frame,
+so removing or re-rendering a shot leaves the one after it opening on a frame
+that no longer exists in the movie. Rather than silently re-rendering everything
+downstream — which would spend your fal credits without asking — the shot after
+the seam is marked **off-chain** in the storyline, and regenerating it stitches
+the chain back up: regenerate pulls a fresh opening frame from whatever now
+precedes it. Work downward and each regenerate clears the next break.
+
+A failed shot is transparent to all of this: the chain reaches back through it to
+the last shot that actually rendered, so one failure does not strand the rest.
+
+Delete stays available while a shot is still rendering — it is the way out of a
+shot that is stuck — and the in-flight render is discarded when it returns.
 
 ### Breaking continuity
 
