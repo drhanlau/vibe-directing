@@ -78,12 +78,20 @@
     <form class="composer" id="composer">
       <div class="composer-error" id="composerError" hidden></div>
 
-      <textarea id="lineInput" rows="2" placeholder="Type the dialogue…" ></textarea>
+      <textarea id="lineInput" rows="2"
+        placeholder="Type the dialogue… or leave it empty for an action-only shot"></textarea>
+
+      <input id="speakerInput" type="text" autocomplete="off"
+        placeholder="Who speaks — the woman on the right, red hair" />
 
       <details class="direction">
         <summary>Scene direction <span class="opt">optional</span></summary>
         <textarea id="directionInput" rows="2"
           placeholder="Camera pushes in slowly, rain streaks the window…"></textarea>
+        <label class="continuity">
+          <input type="checkbox" id="continuityChk" checked />
+          <span>Hold continuity — same scene, cast, lighting and grade</span>
+        </label>
       </details>
 
       <div class="composer-row">

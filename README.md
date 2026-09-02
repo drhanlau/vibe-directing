@@ -35,15 +35,43 @@ Open http://localhost:5174 (override with `PORT=... npm start`).
 | `POST /api/shots/:id/retry` | Re-runs a failed shot. |
 | `POST /api/reset` | Clears the movie. |
 
-The prompt sent to the model is assembled from your scene direction plus the
-dialogue line, with a continuity instruction appended so the character, lighting
-and grade carry across shots.
+The prompt sent to the model is assembled from your scene direction, the dialogue
+line, and a continuity instruction so the cast, lighting and grade carry across
+shots. Each beat in the storyline has a **Prompt** disclosure showing both the
+prompt that was sent and the model's own expansion of it.
 
 After a clip renders, the server pulls it down and runs
 `ffmpeg -sseof -1 -update 1` to grab its final frame, uploads that frame to fal
 storage, and uses it as `image_url` for the next shot. **ffmpeg must be on your
 PATH** — without it the app still works, but each shot falls back to starting
 from the previous shot's first frame, so continuity drifts.
+
+### Naming the speaker
+
+With two or more actors in frame the model otherwise picks whoever it finds most
+salient, which is often not who you meant. The **Who speaks** field becomes the
+subject of the speech sentence:
+
+> *the woman on the right, red hair* → `The woman on the right, red hair speaks, lips synced: "..."`
+
+Describe the speaker by **position and appearance, not by name** — the model has
+only the picture, so "Marcus" means nothing to it while "the man on the left in
+the grey suit" is something it can resolve. It helps to also give the other actor
+a silent action in the scene direction ("listens, jaw tight, doesn't speak"),
+which suppresses the usual failure of animating both mouths. The field is kept
+between shots, since a two-hander alternates between the same two descriptions.
+
+### Shots without dialogue
+
+Leave the dialogue box empty and write only scene direction to get an action
+beat — a look, a move, a camera push — with no speech instruction in the prompt.
+
+### Breaking continuity
+
+*Hold continuity* (under Scene direction, on by default) appends "Continue the
+same scene, same cast, same lighting and film grade." That is what you want for
+"she turns her head", but it fights a real change — uncheck it when the direction
+is a cut, a new location, or a lighting change.
 
 ## Notes
 

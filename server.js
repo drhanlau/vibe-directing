@@ -41,7 +41,9 @@ const publicShot = (shot) => ({
   id: shot.id,
   index: shot.index,
   line: shot.line,
+  speaker: shot.speaker,
   direction: shot.direction,
+  continuity: shot.continuity,
   prompt: shot.prompt,
   status: shot.status,
   error: shot.error,
@@ -58,11 +60,26 @@ const state = () => ({
   shots: movie.shots.map(publicShot),
 });
 
-function buildPrompt({ line, direction }) {
+/**
+ * Turn the free-text speaker note into the subject of the speech sentence.
+ * Positional/visual descriptions ("the woman on the right, red hair") are what
+ * the model can actually resolve against the frame - a name means nothing to it.
+ */
+function speakerSubject(speaker) {
+  const who = speaker?.trim().replace(/[.\s]+$/, '');
+  if (!who) return 'The character in frame';
+  return who.charAt(0).toUpperCase() + who.slice(1);
+}
+
+function buildPrompt({ line, direction, speaker, continuity = true }) {
   const parts = [];
   if (direction?.trim()) parts.push(direction.trim());
-  if (line?.trim()) parts.push(`The character in frame speaks, lips synced: "${line.trim()}"`);
-  parts.push('Continue the same scene, same character, same lighting and film grade.');
+  if (line?.trim()) {
+    parts.push(`${speakerSubject(speaker)} speaks, lips synced: "${line.trim()}"`);
+  }
+  // Off when the shot is meant to change something - the continuity sentence
+  // pulls the model back toward the previous frame and fights a real cut.
+  if (continuity) parts.push('Continue the same scene, same cast, same lighting and film grade.');
   return parts.join(' ');
 }
 
@@ -168,9 +185,12 @@ app.post('/api/start-image', async (req, res) => {
 });
 
 app.post('/api/shots', (req, res) => {
-  const { line, direction, duration, resolution, promptExpansionMode } = req.body || {};
+  const {
+    line, speaker, direction, continuity,
+    duration, resolution, promptExpansionMode,
+  } = req.body || {};
   if (!line?.trim() && !direction?.trim()) {
-    return res.status(400).json({ error: 'Write a line of dialogue first.' });
+    return res.status(400).json({ error: 'Write a line of dialogue or some scene direction first.' });
   }
   const startImageUrl = currentTailImage();
   if (!startImageUrl) {
@@ -181,8 +201,10 @@ app.post('/api/shots', (req, res) => {
     id: randomUUID(),
     index: movie.shots.length + 1,
     line: line?.trim() || '',
+    speaker: speaker?.trim() || '',
     direction: direction?.trim() || '',
-    prompt: buildPrompt({ line, direction }),
+    continuity: continuity !== false,
+    prompt: buildPrompt({ line, direction, speaker, continuity: continuity !== false }),
     startImageUrl,
     endImageUrl: null,
     videoUrl: null,

@@ -8,7 +8,8 @@ const el = {
   drop: $('drop'), fileInput: $('fileInput'), startThumb: $('startThumb'),
   openingNote: $('openingNote'), beats: $('beats'), storyScroll: $('storyScroll'),
   composer: $('composer'), composerError: $('composerError'),
-  lineInput: $('lineInput'), directionInput: $('directionInput'),
+  lineInput: $('lineInput'), speakerInput: $('speakerInput'),
+  directionInput: $('directionInput'), continuityChk: $('continuityChk'),
   durationSel: $('durationSel'), resolutionSel: $('resolutionSel'),
   modeSel: $('modeSel'), sendBtn: $('sendBtn'), resetBtn: $('resetBtn'),
 };
@@ -17,6 +18,7 @@ let movie = { startImageUrl: null, shots: [] };
 let playIndex = -1;          // index into readyShots()
 let waitingForNext = false;  // playback ran out of footage mid-movie
 let pollTimer = null;
+const openPrompts = new Set(); // shot ids whose prompt disclosure is expanded
 
 const preloader = document.createElement('video');
 preloader.preload = 'auto';
@@ -125,7 +127,9 @@ function render() {
   el.playBtn.textContent = el.player.paused || playIndex < 0 ? '▶' : '❚❚';
   el.playBtn.disabled = ready.length === 0;
   el.restartBtn.disabled = ready.length === 0;
-  el.sendBtn.disabled = !movie.startImageUrl || !el.lineInput.value.trim();
+  // Either box alone is a valid shot: dialogue, or action-only direction.
+  el.sendBtn.disabled = !movie.startImageUrl
+    || !(el.lineInput.value.trim() || el.directionInput.value.trim());
 
   renderReel(ready);
   renderBeats(ready);
@@ -173,10 +177,32 @@ function renderBeats(ready) {
         <span>${shot.duration}s · ${esc(shot.resolution)}</span>
         <span class="beat-status">${status}</span>
       </div>
+      ${shot.speaker && shot.line ? `<p class="beat-speaker">${esc(shot.speaker)}</p>` : ''}
       ${shot.line ? `<p class="beat-line">${esc(shot.line)}</p>` : ''}
       ${shot.direction ? `<p class="beat-direction">${esc(shot.direction)}</p>` : ''}
       ${shot.error ? `<p class="beat-error">${esc(shot.error)}</p>` : ''}
+      ${shot.prompt ? `
+        <details class="beat-prompt">
+          <summary>Prompt</summary>
+          <p><span class="pl">Sent</span>${esc(shot.prompt)}</p>
+          ${shot.expandedPrompt
+            ? `<p><span class="pl">Model expansion</span>${esc(shot.expandedPrompt)}</p>`
+            : ''}
+        </details>` : ''}
     `;
+
+    const promptEl = li.querySelector('.beat-prompt');
+    if (promptEl) {
+      // Beats are rebuilt on every poll tick, so the open/closed state has to
+      // live outside the DOM or it snaps shut while a shot is still rendering.
+      promptEl.open = openPrompts.has(shot.id);
+      // The beat itself seeks playback, so opening the prompt must not bubble.
+      promptEl.addEventListener('click', (e) => e.stopPropagation());
+      promptEl.addEventListener('toggle', () => {
+        if (promptEl.open) openPrompts.add(shot.id);
+        else openPrompts.delete(shot.id);
+      });
+    }
 
     if (shot.status === 'ready') {
       li.addEventListener('click', () => playAt(ready.findIndex((s) => s.id === shot.id)));
@@ -286,6 +312,10 @@ el.lineInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); el.composer.requestSubmit(); }
 });
 
+// Direction alone can carry a shot, so it has to drive the Send button too.
+// No Enter-to-send here: it is prose, and newlines are worth more than a shortcut.
+el.directionInput.addEventListener('input', render);
+
 el.composer.addEventListener('submit', async (e) => {
   e.preventDefault();
   const line = el.lineInput.value.trim();
@@ -299,6 +329,8 @@ el.composer.addEventListener('submit', async (e) => {
       method: 'POST',
       body: JSON.stringify({
         line, direction,
+        speaker: el.speakerInput.value.trim(),
+        continuity: el.continuityChk.checked,
         duration: Number(el.durationSel.value),
         resolution: el.resolutionSel.value,
         promptExpansionMode: el.modeSel.value,
@@ -306,6 +338,8 @@ el.composer.addEventListener('submit', async (e) => {
     });
     el.lineInput.value = '';
     el.directionInput.value = '';
+    // speakerInput survives on purpose - a two-hander alternates between the
+    // same couple of descriptions all scene, and retyping them is the chore.
     await refresh();
     el.storyScroll.scrollTop = el.storyScroll.scrollHeight;
   } catch (err) {
@@ -319,6 +353,8 @@ el.composer.addEventListener('submit', async (e) => {
 el.resetBtn.addEventListener('click', async () => {
   if (movie.shots.length && !confirm('Start a new movie? The current storyline is cleared.')) return;
   const next = await api('/api/reset', { method: 'POST' });
+  openPrompts.clear();
+  el.speakerInput.value = '';
   playIndex = -1;
   waitingForNext = false;
   el.player.removeAttribute('src');
