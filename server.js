@@ -118,6 +118,74 @@ async function extractLastFrame(videoUrl) {
   }
 }
 
+/** Codec, frame size and whether a clip carries audio - what concat cares about. */
+async function probeClip(file) {
+  const { stdout } = await execFileAsync('ffprobe', [
+    '-v', 'error',
+    '-show_entries', 'stream=codec_type,codec_name,width,height',
+    '-of', 'json', file,
+  ]);
+  const streams = JSON.parse(stdout).streams || [];
+  const video = streams.find((s) => s.codec_type === 'video');
+  if (!video) throw new Error(`${path.basename(file)} has no video stream`);
+  return {
+    codec: video.codec_name,
+    width: video.width,
+    height: video.height,
+    hasAudio: streams.some((s) => s.codec_type === 'audio'),
+  };
+}
+
+/**
+ * Stitch the clips into one file. Shots can be rendered at different
+ * resolutions, so this takes the cheap path only when every clip already
+ * agrees; otherwise it normalises onto the largest frame and re-encodes.
+ */
+async function concatClips(files, out) {
+  const probes = await Promise.all(files.map(probeClip));
+  const first = probes[0];
+  const uniform = probes.every((p) =>
+    p.codec === first.codec && p.width === first.width
+    && p.height === first.height && p.hasAudio === first.hasAudio);
+
+  if (uniform) {
+    // Same encoder settings throughout: remux without touching the pixels.
+    const listPath = path.join(path.dirname(out), 'clips.txt');
+    const list = files.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
+    await fs.writeFile(listPath, list);
+    await execFileAsync('ffmpeg', [
+      '-y', '-loglevel', 'error',
+      '-f', 'concat', '-safe', '0', '-i', listPath,
+      '-c', 'copy', '-movflags', '+faststart', out,
+    ]);
+    return { mode: 'copied', width: first.width, height: first.height };
+  }
+
+  const width = Math.max(...probes.map((p) => p.width));
+  const height = Math.max(...probes.map((p) => p.height));
+  // Audio only survives if every clip has some; mixing would desync the joins.
+  const withAudio = probes.every((p) => p.hasAudio);
+
+  const args = ['-y', '-loglevel', 'error'];
+  for (const f of files) args.push('-i', f);
+
+  const scaled = files.map((_, i) =>
+    `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,`
+    + `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}]`).join(';');
+  const chain = files.map((_, i) => (withAudio ? `[v${i}][${i}:a]` : `[v${i}]`)).join('');
+  const filter = `${scaled};${chain}concat=n=${files.length}:v=1:a=${withAudio ? 1 : 0}`
+    + `[v]${withAudio ? '[a]' : ''}`;
+
+  args.push('-filter_complex', filter, '-map', '[v]');
+  if (withAudio) args.push('-map', '[a]');
+  args.push(
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
+    '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out,
+  );
+  await execFileAsync('ffmpeg', args);
+  return { mode: 're-encoded', width, height };
+}
+
 async function renderShot(shot) {
   try {
     shot.status = 'rendering';
@@ -278,6 +346,45 @@ app.delete('/api/shots/:id', (req, res) => {
   movie.shots.splice(i, 1);
   movie.shots.forEach((shot, n) => { shot.index = n + 1; });
   res.json(state());
+});
+
+/** The whole movie as one file: every rendered shot, in order. */
+app.get('/api/movie.mp4', async (_req, res) => {
+  const shots = movie.shots.filter((s) => s.status === 'ready' && s.videoUrl);
+  if (!shots.length) {
+    return res.status(400).json({ error: 'No finished shots to download yet.' });
+  }
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'contmovie-export-'));
+  try {
+    const files = [];
+    for (const [i, shot] of shots.entries()) {
+      const r = await fetch(shot.videoUrl);
+      if (!r.ok) throw new Error(`Could not fetch shot ${shot.index} (${r.status})`);
+      const file = path.join(dir, `${String(i).padStart(3, '0')}.mp4`);
+      await fs.writeFile(file, Buffer.from(await r.arrayBuffer()));
+      files.push(file);
+    }
+
+    const out = path.join(dir, 'movie.mp4');
+    const { mode, width, height } = await concatClips(files, out);
+    console.log(`Exported ${files.length} shots at ${width}x${height} (${mode}).`);
+
+    await new Promise((resolve, reject) => {
+      res.download(out, 'continuous-movie.mp4', (err) => (err ? reject(err) : resolve()));
+    });
+  } catch (err) {
+    console.error('Export failed:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: /ENOENT/.test(err.message)
+          ? 'ffmpeg is not on the PATH, so shots cannot be stitched together.'
+          : err.message || 'Export failed',
+      });
+    }
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 app.post('/api/reset', (_req, res) => {

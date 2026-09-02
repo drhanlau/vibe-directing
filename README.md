@@ -11,7 +11,8 @@ a set of unrelated videos.
 
 - **Left — the movie.** Video player, a shot reel you can click through, and
   continuous playback that rolls from one shot straight into the next. New shots
-  join the end of the reel automatically as they finish.
+  join the end of the reel automatically as they finish, and **Download movie**
+  exports the lot as one file.
 - **Right — the storyline.** The opening frame, every beat of dialogue with its
   render status, and the composer.
 
@@ -34,6 +35,7 @@ Open http://localhost:5174 (override with `PORT=... npm start`).
 | `GET /api/state` | Full storyline + shot statuses; the browser polls this while anything is rendering. |
 | `POST /api/shots/:id/regenerate` | Re-renders one shot, from the frame the shot before it now ends on. |
 | `DELETE /api/shots/:id` | Drops one shot and renumbers the rest. |
+| `GET /api/movie.mp4` | Stitches every finished shot into one file and sends it back. |
 | `POST /api/reset` | Clears the movie. |
 
 The prompt sent to the model is assembled from your scene direction, the dialogue
@@ -66,6 +68,19 @@ between shots, since a two-hander alternates between the same two descriptions.
 
 Leave the dialogue box empty and write only scene direction to get an action
 beat — a look, a move, a camera push — with no speech instruction in the prompt.
+
+### Downloading the movie
+
+**Download movie**, top right of the theater, stitches every finished shot into a
+single `continuous-movie.mp4`. Shots still rendering are skipped rather than
+waited for — the button's tooltip says how many are being left out.
+
+Stitching happens with ffmpeg on the server. When every clip already agrees on
+codec, frame size and whether it has audio — the normal case — the clips are
+remuxed without being re-encoded, so the export is quick and lossless. Mixing
+480P and 768P shots in one movie forces the other path: everything is scaled and
+padded onto the largest frame and re-encoded, which is slower and generational.
+Audio only survives if every clip has some.
 
 ### Deleting and regenerating
 

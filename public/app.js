@@ -4,6 +4,7 @@ const el = {
   screen: $('screen'), player: $('player'), still: $('stillFrame'),
   busy: $('screenBusy'), busyLabel: $('busyLabel'), nowPlaying: $('nowPlaying'),
   headMeta: $('headMeta'), playBtn: $('playBtn'), restartBtn: $('restartBtn'),
+  downloadBtn: $('downloadBtn'), downloadError: $('downloadError'),
   reel: $('reel'), autoplayNew: $('autoplayNew'),
   drop: $('drop'), fileInput: $('fileInput'), startThumb: $('startThumb'),
   openingNote: $('openingNote'), beats: $('beats'), storyScroll: $('storyScroll'),
@@ -20,6 +21,8 @@ let playingId = null;        // id of the shot on screen, so the index survives 
 let waitingForNext = false;  // playback ran out of footage mid-movie
 let pollTimer = null;
 const openPrompts = new Set(); // shot ids whose prompt disclosure is expanded
+
+let exporting = false;        // an export is in flight; leave the button alone
 
 const preloader = document.createElement('video');
 preloader.preload = 'auto';
@@ -88,6 +91,39 @@ el.playBtn.addEventListener('click', () => {
 
 el.restartBtn.addEventListener('click', () => { playIndex = -1; playAt(0); });
 
+/* ── Export ───────────────────────────────────────────────── */
+
+el.downloadBtn.addEventListener('click', async () => {
+  exporting = true;
+  el.downloadBtn.disabled = true;
+  el.downloadBtn.textContent = 'Stitching…';
+  el.downloadError.hidden = true;
+
+  let url;
+  try {
+    // Buffered rather than a plain navigation, so a failed stitch surfaces as a
+    // message here instead of dumping JSON into a blank tab.
+    const res = await fetch('/api/movie.mp4');
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Export failed (${res.status})`);
+    }
+    url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'continuous-movie.mp4';
+    a.click();
+  } catch (err) {
+    el.downloadError.hidden = false;
+    el.downloadError.textContent = err.message;
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+    exporting = false;
+    el.downloadBtn.textContent = 'Download movie';
+    render();
+  }
+});
+
 /* ── Rendering ────────────────────────────────────────────── */
 
 function render() {
@@ -129,6 +165,13 @@ function render() {
   el.playBtn.textContent = el.player.paused || playIndex < 0 ? '▶' : '❚❚';
   el.playBtn.disabled = ready.length === 0;
   el.restartBtn.disabled = ready.length === 0;
+
+  if (!exporting) {
+    el.downloadBtn.disabled = ready.length === 0;
+    el.downloadBtn.title = pending.length
+      ? `Stitches the ${ready.length} finished shot${ready.length === 1 ? '' : 's'} into one file; ${pending.length} still rendering`
+      : 'Stitch every shot into a single video file';
+  }
   // Either box alone is a valid shot: dialogue, or action-only direction.
   el.sendBtn.disabled = !movie.startImageUrl
     || !(el.lineInput.value.trim() || el.directionInput.value.trim());

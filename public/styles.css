@@ -54,6 +54,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .theater-head { flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
 
+.head-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.head-right .head-meta { flex: none; }
+
+.download-error {
+  font-size: 11px;
+  color: var(--danger);
+  text-align: right;
+  line-height: 1.4;
+  min-width: 0;
+}
+
 .theater-head h1 {
   font-family: "Instrument Serif", Georgia, serif;
   font-weight: 400;
