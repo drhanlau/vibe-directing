@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Continuous Movie</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0a0c'/%3E%3Cpath d='M13 10l10 6-10 6z' fill='%23e8b647'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<main class="stage">
+
+  <!-- ── Left: the movie ─────────────────────────────────── -->
+  <section class="theater">
+    <header class="theater-head">
+      <h1>Continuous&nbsp;Movie</h1>
+      <div class="head-meta" id="headMeta">No footage yet</div>
+    </header>
+
+    <div class="screen" id="screen">
+      <video id="player" playsinline></video>
+      <img id="stillFrame" alt="" />
+
+      <div class="screen-empty" id="screenEmpty">
+        <div class="empty-mark">▶</div>
+        <p>Upload a starting frame, then write the first line.</p>
+      </div>
+
+      <div class="screen-busy" id="screenBusy" hidden>
+        <div class="spinner"></div>
+        <p id="busyLabel">Rendering shot…</p>
+      </div>
+
+      <div class="now-playing" id="nowPlaying" hidden></div>
+    </div>
+
+    <div class="transport">
+      <button class="tbtn primary" id="playBtn" title="Play / pause">▶</button>
+      <button class="tbtn" id="restartBtn" title="Play from the top">↺</button>
+      <div class="reel" id="reel"></div>
+      <label class="autoplay">
+        <input type="checkbox" id="autoplayNew" checked />
+        <span>Auto-play new shots</span>
+      </label>
+    </div>
+  </section>
+
+  <!-- ── Right: the storyline ────────────────────────────── -->
+  <aside class="storyline">
+    <header class="story-head">
+      <h2>Storyline</h2>
+      <button class="ghost" id="resetBtn">New movie</button>
+    </header>
+
+    <div class="story-scroll" id="storyScroll">
+      <div class="opening" id="opening">
+        <div class="drop" id="drop">
+          <input type="file" id="fileInput" accept="image/*" hidden />
+          <img id="startThumb" alt="" hidden />
+          <div class="drop-inner" id="dropInner">
+            <div class="drop-icon">＋</div>
+            <strong>Opening frame</strong>
+            <span>Drop an image or click to browse</span>
+          </div>
+        </div>
+        <p class="opening-note" id="openingNote">
+          This picture becomes the movie's first frame. Every following shot picks
+          up from where the previous one ended.
+        </p>
+      </div>
+
+      <ol class="beats" id="beats"></ol>
+    </div>
+
+    <form class="composer" id="composer">
+      <div class="composer-error" id="composerError" hidden></div>
+
+      <textarea id="lineInput" rows="2" placeholder="Type the dialogue…" ></textarea>
+
+      <details class="direction">
+        <summary>Scene direction <span class="opt">optional</span></summary>
+        <textarea id="directionInput" rows="2"
+          placeholder="Camera pushes in slowly, rain streaks the window…"></textarea>
+      </details>
+
+      <div class="composer-row">
+        <select id="durationSel" title="Shot length">
+          <option value="5">5s</option>
+          <option value="10">10s</option>
+        </select>
+        <select id="resolutionSel" title="Resolution">
+          <option value="768P">768P</option>
+          <option value="480P">480P</option>
+        </select>
+        <select id="modeSel" title="Prompt expansion">
+          <option value="balanced">Balanced</option>
+          <option value="quality">Quality</option>
+        </select>
+        <button type="submit" class="send" id="sendBtn" disabled>Send</button>
+      </div>
+    </form>
+  </aside>
+
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
