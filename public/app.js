@@ -111,7 +111,7 @@ el.downloadBtn.addEventListener('click', async () => {
     url = URL.createObjectURL(await res.blob());
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'continuous-movie.mp4';
+    a.download = 'vibe-directing.mp4';
     a.click();
   } catch (err) {
     el.downloadError.hidden = false;

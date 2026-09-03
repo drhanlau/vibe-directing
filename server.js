@@ -371,7 +371,7 @@ app.get('/api/movie.mp4', async (_req, res) => {
     console.log(`Exported ${files.length} shots at ${width}x${height} (${mode}).`);
 
     await new Promise((resolve, reject) => {
-      res.download(out, 'continuous-movie.mp4', (err) => (err ? reject(err) : resolve()));
+      res.download(out, 'vibe-directing.mp4', (err) => (err ? reject(err) : resolve()));
     });
   } catch (err) {
     console.error('Export failed:', err);
@@ -394,5 +394,5 @@ app.post('/api/reset', (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Continuous Movie running at http://localhost:${PORT}`);
+  console.log(`Vibe Directing v0.1 running at http://localhost:${PORT}`);
 });

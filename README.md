@@ -1,6 +1,6 @@
-# Continuous Movie
+# Vibe Directing
 
-An AI movie that grows one line of dialogue at a time. Upload a starting picture,
+**v0.1** — an AI movie that grows one line of dialogue at a time. Upload a starting picture,
 type a line, and a clip is generated with
 [MiniMax H3 Max image-to-video](https://fal.ai/models/minimax/h3-max/image-to-video)
 on fal.ai and played in the left panel. Every new shot starts from the **last frame
@@ -72,7 +72,7 @@ beat — a look, a move, a camera push — with no speech instruction in the pro
 ### Downloading the movie
 
 **Download movie**, top right of the theater, stitches every finished shot into a
-single `continuous-movie.mp4`. Shots still rendering are skipped rather than
+single `vibe-directing.mp4`. Shots still rendering are skipped rather than
 waited for — the button's tooltip says how many are being left out.
 
 Stitching happens with ffmpeg on the server. When every clip already agrees on
